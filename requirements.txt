@@ -1,0 +1,9 @@
+pyttsx3
+SpeechRecognition
+pywhatkit
+yfinance
+pyjokes
+wikipedia
+requests
+PyAudio
+
