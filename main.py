@@ -267,7 +267,7 @@ def modo_notas(text_mode=False):
 
 def obtener_clima(ciudad=''):
     try:
-        lugar = ciudad.strip() or 'Mexico'
+        lugar = ciudad.strip() or 'Mexicali'
         session = requests.Session()
         # Intentar wttr.in con hasta 3 reintentos y backoff
         url = f'https://wttr.in/{requests.utils.requote_uri(lugar)}?format=3'
@@ -277,7 +277,7 @@ def obtener_clima(ciudad=''):
                 timeout = 5 + attempt * 5
                 resp = session.get(url, timeout=timeout)
                 if resp.status_code == 200 and resp.text:
-                    hablar(f'El clima para {lugar} es: {resp.text}')
+                    hablar(f'Clima en {resp.text}')
                     return
                 last_exc = Exception(f'Código HTTP {resp.status_code}')
             except requests.RequestException as e:
