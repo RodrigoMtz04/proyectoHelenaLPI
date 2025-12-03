@@ -19,14 +19,37 @@ ID_EN_US = 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\TTS
 
 # Inicializar motor de voz una vez
 engine = pyttsx3.init()
-# Intentamos seleccionar una voz en español; si falla, se queda la por defecto
-try:
-    engine.setProperty('voice', ID_ES_ES)
-except Exception:
+
+
+def _configurar_voz(engine_obj):
+    """Configura la voz del engine al español, usando una instalada o los tokens de respaldo."""
     try:
-        engine.setProperty('voice', ID_ES_MX)
-    except Exception:
-        pass
+        voices = engine_obj.getProperty('voices')
+        voz_es = None
+        for v in voices:
+            vid = (v.id or '').lower()
+            vname = (getattr(v, 'name', '') or '').lower()
+            if 'es-' in vid or 'spanish' in vname or 'espa' in vname:
+                voz_es = v
+                break
+        if voz_es:
+            engine_obj.setProperty('voice', voz_es.id)
+        else:
+            # Fallback a tokens específicos de Windows si existen
+            try:
+                engine_obj.setProperty('voice', ID_ES_ES)
+            except Exception:
+                try:
+                    engine_obj.setProperty('voice', ID_ES_MX)
+                except Exception:
+                    pass
+    except Exception as e:
+        print('Error al seleccionar voz:', e)
+
+
+# Seleccionar voz
+_configurar_voz(engine)
+
 # Ajustes de velocidad y volumen
 engine.setProperty('rate', 150)
 engine.setProperty('volume', 1.0)
@@ -36,15 +59,42 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECORDATORIOS_FILE = os.path.join(BASE_DIR, 'recordatorios.json')
 NOTAS_FILE = os.path.join(BASE_DIR, 'notas.txt')
 
+
+def _recrear_engine():
+    """Recrea el engine de pyttsx3 en caso de bloqueo, manteniendo configuración básica."""
+    global engine
+    try:
+        engine = pyttsx3.init()
+        _configurar_voz(engine)
+        engine.setProperty('rate', 150)
+        engine.setProperty('volume', 1.0)
+        print('[DEBUG] Engine de voz recreado correctamente')
+    except Exception as e:
+        print('[DEBUG] Error al recrear engine de voz:', e)
+
+
 # Helper: hablar
 def hablar(mensaje):
     print('[Helena]:', mensaje)
     try:
-        engine.say(mensaje)
-        engine.runAndWait()
+        # Crear un engine nuevo por llamada usando el driver SAPI5 de Windows
+        local_engine = pyttsx3.init(driverName='sapi5')
+        # Configurar voz español
+        _configurar_voz(local_engine)
+        local_engine.setProperty('rate', 150)
+        local_engine.setProperty('volume', 1.0)
+        # Pronunciar
+        local_engine.say(mensaje)
+        local_engine.runAndWait()
+        # Liberar recursos
+        try:
+            local_engine.stop()
+        except Exception:
+            pass
+        del local_engine
     except Exception as e:
-        # Como fallback imprimimos
         print('Error al sintetizar voz:', e)
+        # No relanzamos para no cortar el flujo
 
 # Helper: mostrar (imprime y opcionalmente habla)
 def mostrar(mensaje, speak=True):
@@ -61,10 +111,16 @@ def mostrar(mensaje, speak=True):
 
 # Helper: escuchar (con fallback a entrada por texto)
 def escuchar(text_mode=False, timeout=None, phrase_time_limit=None):
+    """Devuelve el comando del usuario.
+
+    - Si text_mode=True: siempre pide entrada por teclado, sin usar micrófono.
+    - Si text_mode=False: usa el micrófono y reconocimiento de voz.
+    """
     if text_mode:
         try:
-            # Informar y permitir que el usuario escriba el comando en modo texto
-            mostrar('Por favor, escribe tu comando:', speak=True)
+            # En modo texto NO usamos el micrófono nunca.
+            mostrar('Por favor, escribe tu comando:', speak=False)
+            # Si quieres que también hable la invitación a escribir, cambia speak a True.
             return input('Escribe tu comando: ').strip()
         except Exception:
             return None
@@ -342,12 +398,15 @@ def enviar_whatsapp(numero, mensaje):
 # Bucle principal de interacción
 
 def pedir_cosas(text_mode=False):
-    saludo_inicial()
+    """Bucle principal de comandos.
+
+    No hace saludo inicial, para que el main pueda controlar mejor el arranque
+    (y la frase de prueba) en ambos modos.
+    """
     comenzar = True
     while comenzar:
         pedido = escuchar(text_mode=text_mode)
         if not pedido:
-            # Si no escuchó, continuar el loop
             continue
         pedido = pedido.lower()
 
@@ -502,6 +561,10 @@ def modo_prueba():
 if __name__ == '__main__':
     text_mode = '--text' in sys.argv
     test_mode = '--test' in sys.argv
+
+    # Saludo inicial solo una vez, controlado desde aquí
+    saludo_inicial()
+
     if test_mode:
         modo_prueba()
     else:
